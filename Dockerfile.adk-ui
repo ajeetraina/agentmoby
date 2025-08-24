@@ -1,28 +1,40 @@
-# Sample Dockerfile for ADK UI service
 FROM node:18-alpine
 
 WORKDIR /app
 
+# Create simple Express package.json directly in Docker
+RUN echo '{ \
+  "name": "agentmoby-ui", \
+  "version": "1.0.0", \
+  "main": "server.js", \
+  "scripts": { \
+    "start": "node server.js" \
+  }, \
+  "dependencies": { \
+    "express": "^4.18.2", \
+    "cors": "^2.8.5", \
+    "axios": "^1.6.0" \
+  } \
+}' > package.json
+
 # Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install
 
-# Copy application code
-COPY ui/ ./
-
-# Build the application
-RUN npm run build
+# Copy ONLY the server.js file we need
+COPY ui/server.js ./server.js
 
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
-RUN chown -R nodejs:nodejs /app
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
 USER nodejs
 
 EXPOSE 3000
+ENV PORT=3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1
 
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

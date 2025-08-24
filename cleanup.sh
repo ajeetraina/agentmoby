@@ -1,3 +1,72 @@
+#!/bin/bash
+
+echo "🧹 Complete cleanup and rebuild of AgentMoby..."
+
+# Stop everything and clean up
+echo "🛑 Stopping all containers..."
+docker compose down --remove-orphans
+
+echo "🗑️ Removing old images and containers..."
+docker compose rm -f
+docker image rm -f agentmoby-adk agentmoby-adk-ui 2>/dev/null || true
+docker system prune -f
+
+echo "📁 Cleaning up existing files..."
+rm -f ui/package*.json 2>/dev/null || true
+rm -rf ui/node_modules 2>/dev/null || true
+rm -rf ui/pages ui/.next 2>/dev/null || true
+
+# Ensure clean directory structure
+mkdir -p ui
+
+# Create completely fixed Dockerfile.adk-ui (embedded package.json)
+echo "🔨 Creating corrected Dockerfile.adk-ui..."
+cat > Dockerfile.adk-ui << 'EOF'
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Create simple Express package.json directly in Docker
+RUN echo '{ \
+  "name": "agentmoby-ui", \
+  "version": "1.0.0", \
+  "main": "server.js", \
+  "scripts": { \
+    "start": "node server.js" \
+  }, \
+  "dependencies": { \
+    "express": "^4.18.2", \
+    "cors": "^2.8.5", \
+    "axios": "^1.6.0" \
+  } \
+}' > package.json
+
+# Install dependencies
+RUN npm install
+
+# Copy ONLY the server.js file we need
+COPY ui/server.js ./server.js
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
+
+EXPOSE 3000
+ENV PORT=3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1
+
+CMD ["node", "server.js"]
+EOF
+
+# Create simple Express server (NO Next.js references)
+echo "🔨 Creating simple Express server..."
+cat > ui/server.js << 'EOF'
 const express = require('express');
 const cors = require('cors');
 
@@ -250,3 +319,196 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔍 Health: http://localhost:${PORT}/health`);
   console.log('✅ No Next.js - Pure Express.js');
 });
+EOF
+
+# Create fixed index.js for ADK service
+echo "🔨 Creating fixed ADK service..."
+cat > index.js << 'EOF'
+const express = require('express');
+const cors = require('cors');
+
+const app = express();
+const PORT = process.env.PORT || 8000;
+
+app.use(cors());
+app.use(express.json());
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    service: 'adk',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '🐳 AgentMoby ADK Service',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      status: '/api/status',
+      agent: '/api/agent'
+    }
+  });
+});
+
+// Status endpoint
+app.get('/api/status', (req, res) => {
+  res.json({ 
+    service: 'adk',
+    status: 'running',
+    uptime: Math.floor(process.uptime()),
+    memory: process.memoryUsage(),
+    config: {
+      mcpGateway: process.env.MCPGATEWAY_ENDPOINT || 'not configured',
+      catalogueUrl: process.env.CATALOGUE_URL || 'not configured'
+    }
+  });
+});
+
+// Agent endpoint
+app.post('/api/agent', (req, res) => {
+  const { message } = req.body || {};
+  
+  res.json({
+    response: `ADK received: "${message || 'no message'}"`,
+    timestamp: new Date().toISOString(),
+    status: 'processed'
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🐳 AgentMoby ADK running on port ${PORT}`);
+  console.log(`🌐 API: http://localhost:${PORT}`);
+  console.log(`🔍 Health: http://localhost:${PORT}/health`);
+});
+EOF
+
+# Create super clean rebuild script
+cat > super-clean-rebuild.sh << 'EOF'
+#!/bin/bash
+
+echo "🚀 Super clean rebuild starting..."
+
+# Force stop everything
+docker compose kill 2>/dev/null || true
+docker compose down --remove-orphans --volumes 2>/dev/null || true
+
+# Clean Docker system
+docker system prune -f
+docker volume prune -f
+
+# Remove specific images
+docker rmi agentmoby-adk agentmoby-adk-ui 2>/dev/null || true
+
+echo "🔨 Building services from scratch..."
+
+# Build ADK service
+echo "Building ADK..."
+docker compose build --no-cache --pull adk
+
+# Build ADK-UI service  
+echo "Building ADK-UI..."
+docker compose build --no-cache --pull adk-ui
+
+echo "🗄️ Starting databases..."
+docker compose up -d catalogue-db mongodb
+
+echo "⏳ Waiting 25 seconds for databases..."
+sleep 25
+
+echo "🚀 Starting all services..."
+docker compose up -d
+
+echo "⏳ Final wait for services..."
+sleep 10
+
+echo ""
+echo "✅ Rebuild complete!"
+echo ""
+echo "🌐 Access points:"
+echo "  • AgentMoby Dashboard: http://localhost:3000"
+echo "  • ADK API: http://localhost:8000"
+echo "  • Sock Store: http://localhost:9090"
+echo ""
+
+# Test the services
+echo "🧪 Quick connectivity test:"
+curl -s http://localhost:3000/health > /dev/null && echo "✅ UI Service - OK" || echo "❌ UI Service - Failed"
+curl -s http://localhost:8000/health > /dev/null && echo "✅ ADK Service - OK" || echo "❌ ADK Service - Failed"
+
+echo ""
+echo "📊 Container status:"
+docker compose ps
+EOF
+
+chmod +x super-clean-rebuild.sh
+
+# Create verification script
+cat > verify-services.sh << 'EOF'
+#!/bin/bash
+
+echo "🔍 Verifying all services..."
+echo ""
+
+echo "📦 Container Status:"
+docker compose ps
+echo ""
+
+echo "🌐 Service Health Checks:"
+services=(
+    "http://localhost:3000/health|UI Service"
+    "http://localhost:8000/health|ADK API"
+    "http://localhost:9090|Frontend"
+    "http://localhost:8081|Catalogue"
+)
+
+for service in "${services[@]}"; do
+    url=$(echo $service | cut -d'|' -f1)
+    name=$(echo $service | cut -d'|' -f2)
+    
+    if curl -s -f "$url" > /dev/null 2>&1; then
+        echo "✅ $name - Responding"
+    else
+        echo "❌ $name - Not responding"
+    fi
+done
+
+echo ""
+echo "📋 Recent logs (UI Service):"
+docker compose logs --tail=5 adk-ui
+
+echo ""
+echo "📋 Recent logs (ADK Service):"  
+docker compose logs --tail=5 adk
+EOF
+
+chmod +x verify-services.sh
+
+echo "🎉 Complete cleanup solution created!"
+echo ""
+echo "📁 Created files:"
+echo "  ├── Dockerfile.adk-ui (pure Express, no Next.js)"
+echo "  ├── ui/server.js (beautiful Express dashboard)"
+echo "  ├── index.js (fixed ADK service)"
+echo "  ├── super-clean-rebuild.sh (complete rebuild)"
+echo "  └── verify-services.sh (service verification)"
+echo ""
+echo "🚀 To completely fix everything:"
+echo "  ./super-clean-rebuild.sh"
+echo ""
+echo "🔍 To verify everything works:"
+echo "  ./verify-services.sh"
+echo ""
+echo "This will:"
+echo "  • Stop all containers and clean Docker cache"
+echo "  • Remove old broken images completely"
+echo "  • Build fresh images with correct configuration"
+echo "  • Start services in proper order"
+echo "  • Verify everything is working"
+EOF
