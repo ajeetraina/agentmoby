@@ -1,88 +1,63 @@
+version: '3.8'
 
 services:
-  # Sock Store Frontend
-  front-end:
-    image: weaveworksdemos/front-end:0.3.12
-    hostname: front-end
+  # AgentMoby Security Dashboard - The main UI
+  agentmoby-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    hostname: agentmoby-dashboard
     ports:
-      - "9090:8079"
-    restart: unless-stopped
-    cap_drop:
-      - all
-    read_only: true
-    networks:
-      - app-network
-    platform: linux/amd64
-
-  # Catalogue Service
-  catalogue:
-    image: roberthouse224/catalogue:amd
-    hostname: catalogue
-    restart: unless-stopped
-    cap_drop:
-      - all
-    cap_add:
-      - NET_BIND_SERVICE
-    read_only: true
-    ports:
-      - "8081:80"
+      - "3000:3000"
+    environment:
+      - API_BASE_URL=http://agent-core:8000
+      - MCP_GATEWAY_URL=http://mcp-gateway:8811
+      - NODE_ENV=production
     depends_on:
-      - catalogue-db
+      - agent-core
+      - mcp-gateway
     networks:
-      - app-network
-      - db-network
-    platform: linux/amd64
-    environment:
-      # Override the database connection if needed
-      - ZIPKIN_ENDPOINT=${ZIPKIN_ENDPOINT:-}
-
-  # Catalogue Database - Fixed credentials to match what catalogue service expects
-  catalogue-db:
-    image: weaveworksdemos/catalogue-db:0.3.0
-    hostname: catalogue-db
-    restart: unless-stopped
-    environment:
-      # The catalogue service expects these specific credentials
-      - MYSQL_ROOT_PASSWORD=fake_password  # Root password
-      - MYSQL_DATABASE=socksdb             # Database name
-      - MYSQL_USER=catalogue_user          # User that catalogue service uses
-      - MYSQL_PASSWORD=default_password    # Password that catalogue service uses
-    networks:
-      - db-network
-    volumes:
-      - catalogue_db_data:/var/lib/mysql
-    platform: linux/amd64
-
-  # MongoDB for Customer Reviews
-  mongodb:
-    image: mongo:7-jammy
-    hostname: mongodb
-    ports:
-      - "27017:27017"
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
-      - MONGO_INITDB_DATABASE=sockstore
-    volumes:
-      - ./data/mongodb:/docker-entrypoint-initdb.d:ro
-      - mongodb_data:/data/db
-    networks:
-      - db-network
+      - agentmoby-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    command: [
-      "mongod",
-      "--quiet",
-      "--logpath", "/var/log/mongodb/mongod.log",
-      "--logappend"
-    ]
 
-  # MCP Gateway with Docker Socket Access
+  # AgentMoby Core Agent - The AI brain with security focus
+  agent-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent-core
+    hostname: agent-core
+    ports:
+      - "8000:8000"
+    environment:
+      - MCPGATEWAY_ENDPOINT=http://mcp-gateway:8811/sse
+      - OPENAI_BASE_URL=https://api.openai.com/v1
+      - AI_DEFAULT_MODEL=openai/gpt-4
+      - NODE_ENV=production
+      - AGENT_ROLE=security_analyst
+      - SECURITY_MODE=enabled
+    depends_on:
+      - mcp-gateway
+      - security-db
+    secrets:
+      - openai-api-key
+    networks:
+      - agentmoby-network
+      - security-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MCP Gateway - Secure tool management
   mcp-gateway:
     image: docker/mcp-gateway:latest
     hostname: mcp-gateway
@@ -102,90 +77,81 @@ services:
     secrets:
       - mcp_secret
     depends_on:
-      - mongodb
+      - security-db
     networks:
-      - app-network
-      - db-network
+      - agentmoby-network
+      - security-network
     restart: unless-stopped
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
 
-  # ADK Core Service
-  adk:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    hostname: adk
+  # Security Database - Store agent logs, threats, etc.
+  security-db:
+    image: mongo:7-jammy
+    hostname: security-db
     ports:
-      - "8000:8000"
+      - "27017:27017"
     environment:
-      - MCPGATEWAY_ENDPOINT=http://mcp-gateway:8811/sse
-      - CATALOGUE_URL=http://catalogue:80
-      - OPENAI_BASE_URL=https://api.openai.com/v1
-      - AI_DEFAULT_MODEL=openai/gpt-4
-      - NODE_ENV=production
-    depends_on:
-      - mcp-gateway
-      - catalogue
-    secrets:
-      - openai-api-key
+      - MONGO_INITDB_ROOT_USERNAME=agentmoby
+      - MONGO_INITDB_ROOT_PASSWORD=secure_whale_2024
+      - MONGO_INITDB_DATABASE=agentmoby_security
+    volumes:
+      - ./data/agentmoby:/docker-entrypoint-initdb.d:ro
+      - security_db_data:/data/db
     networks:
-      - app-network
+      - security-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    command: [
+      "mongod",
+      "--quiet",
+      "--logpath", "/var/log/mongodb/mongod.log",
+      "--logappend"
+    ]
 
-  # ADK UI Service
-  adk-ui:
+  # Security Monitor - Watches for threats and anomalies
+  security-monitor:
     build:
       context: .
-      dockerfile: Dockerfile.adk-ui
-    hostname: adk-ui
-    ports:
-      - "3000:3000"
+      dockerfile: Dockerfile.security-monitor
+    hostname: security-monitor
     environment:
-      - API_BASE_URL=http://adk:8000
-      - NODE_ENV=production
+      - SECURITY_DB_URI=mongodb://agentmoby:secure_whale_2024@security-db:27017/agentmoby_security?authSource=admin
+      - ALERT_THRESHOLD=high
+      - MONITORING_MODE=active
     depends_on:
-      - adk
+      - security-db
     networks:
-      - app-network
+      - security-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 networks:
-  app-network:
+  agentmoby-network:
     driver: bridge
-    name: agentmoby_app
-  db-network:
+    name: agentmoby_main
+  security-network:
     driver: bridge
-    name: agentmoby_db
+    name: agentmoby_security
 
 volumes:
-  mongodb_data:
-    name: agentmoby_mongodb_data
-  catalogue_db_data:
-    name: agentmoby_catalogue_db
+  security_db_data:
+    name: agentmoby_security_data
 
 configs:
   mcp_config:
     content: |
       mongodb:
-        uri: mongodb://admin:password@mongodb:27017/sockstore?authSource=admin
-      resend:
-        reply_to: slimslenderslacks@gmail.com
-        sender: slimslenderslacks@slimslenderslacks.com
+        uri: mongodb://agentmoby:secure_whale_2024@security-db:27017/agentmoby_security?authSource=admin
       brave:
         endpoint: https://api.search.brave.com/res/v1/web/search
+      resend:
+        reply_to: security@agentmoby.com
+        sender: alerts@agentmoby.com
 
 secrets:
   openai-api-key:

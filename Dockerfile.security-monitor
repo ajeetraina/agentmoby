@@ -1,0 +1,27 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+RUN echo '{ \
+  "name": "agentmoby-security-monitor", \
+  "version": "1.0.0", \
+  "main": "monitor.js", \
+  "scripts": { \
+    "start": "node monitor.js" \
+  }, \
+  "dependencies": { \
+    "mongodb": "^6.0.0" \
+  } \
+}' > package.json
+
+RUN npm install
+
+COPY security-monitor/ ./
+
+RUN addgroup -g 1001 -S agentmoby && \
+    adduser -S agentmoby -u 1001 && \
+    chown -R agentmoby:agentmoby /app
+
+USER agentmoby
+
+CMD ["node", "monitor.js"]
