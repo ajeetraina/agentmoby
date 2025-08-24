@@ -1,0 +1,32 @@
+{
+  "name": "mobyagent-core",
+  "version": "1.0.0",
+  "description": "MobyAgent: The Whale that never blinks - Secure AI Agent Core",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "docker",
+    "security",
+    "mcp",
+    "mobyagent"
+  ],
+  "author": "MobyAgent Team",
+  "license": "MIT"
+}
