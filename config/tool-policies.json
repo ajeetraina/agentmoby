@@ -1,0 +1,181 @@
+{
+  "version": "1.0",
+  "default_policy": "deny",
+  "policies": {
+    "admin": {
+      "description": "Full access for administrators",
+      "users": [
+        "admin@mobyagent.com",
+        "security@mobyagent.com"
+      ],
+      "allowed_tools": ["*"],
+      "denied_tools": [],
+      "conditions": {
+        "time_restrictions": false,
+        "ip_whitelist": [],
+        "mfa_required": true
+      }
+    },
+    "developer": {
+      "description": "Development team access",
+      "users": [
+        "dev@mobyagent.com",
+        "eng@mobyagent.com"
+      ],
+      "allowed_tools": [
+        "filesystem_read",
+        "web_search",
+        "github_read",
+        "code_analysis",
+        "documentation"
+      ],
+      "denied_tools": [
+        "filesystem_write",
+        "system_exec",
+        "network_admin",
+        "user_management"
+      ],
+      "conditions": {
+        "time_restrictions": {
+          "business_hours_only": true,
+          "timezone": "UTC",
+          "hours": {
+            "start": "09:00",
+            "end": "18:00"
+          },
+          "days": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+        },
+        "rate_limits": {
+          "requests_per_hour": 100,
+          "requests_per_day": 500
+        }
+      }
+    },
+    "analyst": {
+      "description": "Security analyst access",
+      "users": [
+        "analyst@mobyagent.com",
+        "soc@mobyagent.com"
+      ],
+      "allowed_tools": [
+        "security_scan",
+        "log_analysis",
+        "threat_intel",
+        "vulnerability_assessment",
+        "incident_response"
+      ],
+      "denied_tools": [
+        "system_modify",
+        "user_data_access"
+      ],
+      "conditions": {
+        "emergency_access": true,
+        "audit_all_actions": true
+      }
+    },
+    "readonly": {
+      "description": "Read-only access for viewers",
+      "users": [
+        "viewer@mobyagent.com",
+        "guest@mobyagent.com"
+      ],
+      "allowed_tools": [
+        "filesystem_read",
+        "web_search",
+        "documentation_read"
+      ],
+      "denied_tools": [
+        "filesystem_write",
+        "system_exec",
+        "configuration_change",
+        "user_management",
+        "sensitive_data_access"
+      ],
+      "conditions": {
+        "session_timeout": 3600,
+        "concurrent_sessions": 1,
+        "rate_limits": {
+          "requests_per_hour": 50,
+          "requests_per_day": 200
+        }
+      }
+    }
+  },
+  "tool_classifications": {
+    "critical": [
+      "system_exec",
+      "filesystem_write",
+      "network_admin",
+      "user_management",
+      "configuration_change"
+    ],
+    "sensitive": [
+      "database_access",
+      "api_key_management",
+      "log_access",
+      "monitoring_data"
+    ],
+    "standard": [
+      "filesystem_read",
+      "web_search",
+      "documentation",
+      "code_analysis"
+    ],
+    "public": [
+      "health_check",
+      "version_info",
+      "public_documentation"
+    ]
+  },
+  "emergency_policies": {
+    "incident_response": {
+      "enabled": true,
+      "trigger_conditions": [
+        "security_alert_critical",
+        "system_compromise_detected",
+        "data_breach_suspected"
+      ],
+      "emergency_users": [
+        "incident-commander@mobyagent.com",
+        "security-lead@mobyagent.com"
+      ],
+      "elevated_permissions": [
+        "system_shutdown",
+        "network_isolation",
+        "forensic_collection",
+        "emergency_communication"
+      ],
+      "approval_required": false,
+      "audit_level": "maximum",
+      "notification_required": true
+    }
+  },
+  "compliance_requirements": {
+    "data_classification": {
+      "public": {
+        "access_controls": "none",
+        "encryption_required": false,
+        "retention_days": 365
+      },
+      "internal": {
+        "access_controls": "authenticated",
+        "encryption_required": true,
+        "retention_days": 180
+      },
+      "confidential": {
+        "access_controls": "role_based",
+        "encryption_required": true,
+        "retention_days": 90,
+        "approval_required": true
+      },
+      "restricted": {
+        "access_controls": "explicit_grant",
+        "encryption_required": true,
+        "retention_days": 30,
+        "approval_required": true,
+        "mfa_required": true,
+        "audit_all_access": true
+      }
+    }
+  }
+}
