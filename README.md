@@ -1,4 +1,4 @@
-# 🐳 MobyAgent: The Whale that never blinks
+# 🐳 AgentMoby: The Whale that never blinks
 
 <img width="256" height="256" alt="MobyAgent Security Whale" src="https://github.com/user-attachments/assets/e0b5fccc-e3da-4fcb-993d-e6a799408e51" />
 
