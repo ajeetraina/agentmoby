@@ -1,4 +1,3 @@
-version: '3.8'
 
 # MobyAgent: Secure AI Agent Reference Architecture
 # This compose file implements a security-hardened deployment with:
