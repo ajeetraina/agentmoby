@@ -14,7 +14,7 @@ services:
       - app-network
     platform: linux/amd64
 
-  # Catalogue Service (Remove problematic health check)
+  # Catalogue Service
   catalogue:
     image: roberthouse224/catalogue:amd
     hostname: catalogue
@@ -27,21 +27,26 @@ services:
     ports:
       - "8081:80"
     depends_on:
-      - catalogue-db  # Simple dependency without health check
+      - catalogue-db
     networks:
       - app-network
       - db-network
     platform: linux/amd64
+    environment:
+      # Override the database connection if needed
+      - ZIPKIN_ENDPOINT=${ZIPKIN_ENDPOINT:-}
 
-  # Catalogue Database
+  # Catalogue Database - Fixed credentials to match what catalogue service expects
   catalogue-db:
     image: weaveworksdemos/catalogue-db:0.3.0
     hostname: catalogue-db
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_ALLOW_EMPTY_PASSWORD=true
-      - MYSQL_DATABASE=socksdb
+      # The catalogue service expects these specific credentials
+      - MYSQL_ROOT_PASSWORD=fake_password  # Root password
+      - MYSQL_DATABASE=socksdb             # Database name
+      - MYSQL_USER=catalogue_user          # User that catalogue service uses
+      - MYSQL_PASSWORD=default_password    # Password that catalogue service uses
     networks:
       - db-network
     volumes:
@@ -105,7 +110,7 @@ services:
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
 
-  # ADK Core Service (Remove health check dependency)
+  # ADK Core Service
   adk:
     build:
       context: .
@@ -121,7 +126,7 @@ services:
       - NODE_ENV=production
     depends_on:
       - mcp-gateway
-      - catalogue  # Simple dependency
+      - catalogue
     secrets:
       - openai-api-key
     networks:
@@ -146,7 +151,7 @@ services:
       - API_BASE_URL=http://adk:8000
       - NODE_ENV=production
     depends_on:
-      - adk  # Simple dependency
+      - adk
     networks:
       - app-network
     restart: unless-stopped
